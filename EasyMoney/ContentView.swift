@@ -8,8 +8,16 @@
 import SwiftUI
 
 struct ContentView: View {
+    @AppStorage("isDemoUserLoggedIn") private var isDemoUserLoggedIn = false
+
     var body: some View {
-        LoginView()
+        if isDemoUserLoggedIn {
+            MainTabView()
+        } else {
+            NavigationStack {
+                LoginView()
+            }
+        }
     }
 }
 

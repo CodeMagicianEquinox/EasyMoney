@@ -6,12 +6,20 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct EasyMoneyApp: App {
+    @AppStorage("seenWelcomeView") private var seenWelcomeView: Bool = false
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if !seenWelcomeView {
+                OnboardingView()
+            } else {
+                ContentView()
+            }
         }
+        .modelContainer(for: [User.self, MoneyTransaction.self])
     }
 }

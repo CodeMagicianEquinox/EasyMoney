@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 struct LoginView: View {
     private enum FormField: Hashable {
@@ -9,6 +10,9 @@ struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var isPasswordVisible = false
+    @State private var errorMessage: String?
+    @AppStorage("isDemoUserLoggedIn") private var isDemoUserLoggedIn = false
+    @Query private var users: [User]
     @FocusState private var focusedField: FormField?
 
     var body: some View {
@@ -108,8 +112,40 @@ struct LoginView: View {
                 } // form
                 .padding(.horizontal, 25)
 
+                VStack(spacing: 3) {
+                    Text("Trial account")
+                        .fontWeight(.semibold)
+                    Text("demo@easymoney.app  •  Demo123!")
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .padding(.top, 14)
+
+                if let errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.circle.fill")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.red)
+                        .padding(.top, 10)
+                }
+
                 // login button
-                Button(action: {}) {
+                Button {
+                    focusedField = nil
+
+                    let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    let isDemoAccount = normalizedEmail == DemoAccount.email && password == DemoAccount.password
+                    let isSavedAccount = users.contains {
+                        $0.email.lowercased() == normalizedEmail &&
+                        $0.password == User.hashPassword(password)
+                    }
+
+                    if isDemoAccount || isSavedAccount {
+                        errorMessage = nil
+                        isDemoUserLoggedIn = true
+                    } else {
+                        errorMessage = "The email or password is incorrect."
+                    }
+                } label: {
                     Text("Sign in with email")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(.white)
@@ -119,7 +155,28 @@ struct LoginView: View {
                 }
                 .padding(.top, 13)
 
+                Button("Fill trial credentials") {
+                    email = DemoAccount.email
+                    password = DemoAccount.password
+                    errorMessage = nil
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color(hex: "#16865A"))
+                .padding(.top, 10)
+
                 // sign up button
+                HStack(spacing: 4) {
+                    Text("Don't have an account?")
+                        .foregroundStyle(.secondary)
+
+                    NavigationLink("Create one") {
+                        SignUpView()
+                    }
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color(hex: "#16865A"))
+                }
+                .font(.system(size: 12))
+                .padding(.top, 16)
 
                 Spacer()
             } // main VStack
@@ -129,5 +186,8 @@ struct LoginView: View {
 }
 
 #Preview {
-    LoginView()
+    NavigationStack {
+        LoginView()
+    }
+    .modelContainer(for: User.self, inMemory: true)
 }
