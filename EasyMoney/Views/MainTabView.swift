@@ -119,7 +119,7 @@ private struct BudgetsView: View {
 }
 
 private struct SettingsView: View {
-    @AppStorage("isDemoUserLoggedIn") private var isDemoUserLoggedIn = false
+    @AppStorage("userId") private var userId: String = ""
 
     var body: some View {
         NavigationStack {
@@ -142,7 +142,7 @@ private struct SettingsView: View {
                 }
                 Section {
                     Button("Sign out", role: .destructive) {
-                        isDemoUserLoggedIn = false
+                        userId = ""
                     }
                 }
             }

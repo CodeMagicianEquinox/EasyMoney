@@ -7,11 +7,13 @@ struct LoginView: View {
         case password
     }
 
+    @Environment(\.modelContext) private var modelContext
+    @AppStorage("userId") private var userId: String = ""
+    
     @State private var email = ""
     @State private var password = ""
     @State private var isPasswordVisible = false
     @State private var errorMessage: String?
-    @AppStorage("isDemoUserLoggedIn") private var isDemoUserLoggedIn = false
     @Query private var users: [User]
     @FocusState private var focusedField: FormField?
 
@@ -112,15 +114,6 @@ struct LoginView: View {
                 } // form
                 .padding(.horizontal, 25)
 
-                VStack(spacing: 3) {
-                    Text("Trial account")
-                        .fontWeight(.semibold)
-                    Text("demo@easymoney.app  •  Demo123!")
-                }
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .padding(.top, 14)
-
                 if let errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.circle.fill")
                         .font(.system(size: 11, weight: .medium))
@@ -131,20 +124,7 @@ struct LoginView: View {
                 // login button
                 Button {
                     focusedField = nil
-
-                    let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                    let isDemoAccount = normalizedEmail == DemoAccount.email && password == DemoAccount.password
-                    let isSavedAccount = users.contains {
-                        $0.email.lowercased() == normalizedEmail &&
-                        $0.password == User.hashPassword(password)
-                    }
-
-                    if isDemoAccount || isSavedAccount {
-                        errorMessage = nil
-                        isDemoUserLoggedIn = true
-                    } else {
-                        errorMessage = "The email or password is incorrect."
-                    }
+                    performLogin()
                 } label: {
                     Text("Sign in with email")
                         .font(.system(size: 12, weight: .bold))
@@ -154,15 +134,6 @@ struct LoginView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 .padding(.top, 13)
-
-                Button("Fill trial credentials") {
-                    email = DemoAccount.email
-                    password = DemoAccount.password
-                    errorMessage = nil
-                }
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color(hex: "#16865A"))
-                .padding(.top, 10)
 
                 // sign up button
                 HStack(spacing: 4) {
@@ -182,6 +153,35 @@ struct LoginView: View {
             } // main VStack
             .padding(.top, 50)
         } // ZStack
+    }
+    private func performLogin() {
+    // validations
+
+
+    // check the email
+    let descriptor = FetchDescriptor<User>(
+        predicate: #Predicate<User> {
+            $0.email == email
+        }
+    )
+    guard let users = try? modelContext.fetch(descriptor), let user = users.first else {
+        errorMessage = "Invalid Email"
+        return
+    }
+
+    // check the password
+    let hashPassword = User.hashPassword(password)
+    guard hashPassword == user.password else {
+        errorMessage = "Invalid Password"
+        return
+    }
+
+    print("hashPassword")
+    print(hashPassword)
+    print(user.password)
+
+    // login
+    userId = user.id.uuidString
     }
 }
 

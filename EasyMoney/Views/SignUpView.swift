@@ -8,9 +8,11 @@ struct SignUpView: View {
         case password
         case confirmPassword
     }
-
+    
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @AppStorage("userId") private var userId: String = ""
+    
     @State private var name = ""
     @State private var email = ""
     @State private var password = ""
@@ -18,7 +20,7 @@ struct SignUpView: View {
     @State private var isPasswordVisible = false
     @State private var hasAttemptedSignUp = false
     @State private var accountError: String?
-    @AppStorage("isDemoUserLoggedIn") private var isDemoUserLoggedIn = false
+    @State private var errorMessage = ""
     @Query private var users: [User]
     @FocusState private var focusedField: FormField?
 
@@ -107,37 +109,7 @@ struct SignUpView: View {
                     Button {
                         hasAttemptedSignUp = true
                         focusedField = nil
-
-                        guard validationMessage == nil else { return }
-
-                        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                        guard !users.contains(where: { $0.email.lowercased() == normalizedEmail }) else {
-                            accountError = "An account with this email already exists."
-                            return
-                        }
-
-                        let nameParts = name
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                            .split(separator: " ", maxSplits: 1)
-                        let firstName = String(nameParts.first ?? "")
-                        let lastName = nameParts.count > 1 ? String(nameParts[1]) : ""
-
-                        let user = User(
-                            firstName: firstName,
-                            lastName: lastName,
-                            email: normalizedEmail,
-                            password_text: password
-                        )
-                        modelContext.insert(user)
-
-                        do {
-                            try modelContext.save()
-                            accountError = nil
-                            isDemoUserLoggedIn = true
-                        } catch {
-                            modelContext.delete(user)
-                            accountError = "The account could not be saved. Please try again."
-                        }
+                        performSignup()
                     } label: {
                         Text("Create account")
                             .font(.system(size: 12, weight: .bold))
@@ -243,6 +215,48 @@ struct SignUpView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(focusedField == field ? Color(hex: "#16865A") : .clear, lineWidth: 2)
         }
+    }
+    private func hideError() {
+        errorMessage = ""
+    }
+
+    private func performSignup() {
+    // data validations
+        guard validationMessage == nil else { return }
+
+    // check if the email hasnt been used yet
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !users.contains(where: { $0.email.lowercased() == normalizedEmail }) else {
+            accountError = "An account with this email already exists."
+            return
+        }
+
+        let nameParts = name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ", maxSplits: 1)
+        let firstName = String(nameParts.first ?? "")
+        let lastName = nameParts.count > 1 ? String(nameParts[1]) : ""
+
+// create the account
+let user = User(
+    firstName: firstName,
+    lastName: lastName,
+    email: email,
+    password_text: password
+)
+
+do {
+    modelContext.insert(user)
+    try modelContext.save()
+    print("User created!")
+
+    // auto-login??
+    userId = user.id.uuidString
+} catch {
+    print("Error creating user: \(error)")
+    modelContext.delete(user)
+    accountError = "The account could not be saved. Please try again."
+}
     }
 }
 
