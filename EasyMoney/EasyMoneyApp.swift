@@ -16,8 +16,9 @@ struct EasyMoneyApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             User.self,
-            // list here the rest of models
             MoneyTransaction.self,
+            Expense.self,
+            ExpenseCategory.self,
         ])
         
         do {
@@ -31,6 +32,15 @@ struct EasyMoneyApp: App {
             )
             
             let context = container.mainContext
+            let existingCategories = try context.fetch(FetchDescriptor<ExpenseCategory>())
+            if existingCategories.isEmpty {
+                for category in ExpenseCategory.defaults {
+                    context.insert(
+                        ExpenseCategory(name: category.name, iconName: category.icon)
+                    )
+                }
+                try context.save()
+            }
             return container
         } catch {
             fatalError("Error setting up SwiftData: \(error)")
