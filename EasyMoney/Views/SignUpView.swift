@@ -248,12 +248,10 @@ let user = User(
 do {
     modelContext.insert(user)
     try modelContext.save()
-    print("User created!")
 
     // auto-login??
     userId = user.id.uuidString
 } catch {
-    print("Error creating user: \(error)")
     modelContext.delete(user)
     accountError = "The account could not be saved. Please try again."
 }

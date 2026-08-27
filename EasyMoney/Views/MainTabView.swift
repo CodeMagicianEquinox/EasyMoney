@@ -107,71 +107,178 @@ private struct DashboardView: View {
 }
 
 private struct TransactionsView: View {
+    private enum DateFilter: String, CaseIterable, Identifiable {
+        case all = "All Dates"
+        case thisMonth = "This Month"
+        case last30Days = "Last 30 Days"
+
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
+    @Query(sort: \ExpenseCategory.name) private var categories: [ExpenseCategory]
     @State private var showingAddExpense = false
+    @State private var editingExpense: Expense?
+    @State private var searchText = ""
+    @State private var selectedCategory = "All Categories"
+    @State private var dateFilter: DateFilter = .all
+    @State private var saveError: String?
+
+    private var filteredExpenses: [Expense] {
+        expenses.filter { expense in
+            let matchesSearch = searchText.isEmpty
+                || expense.title.localizedCaseInsensitiveContains(searchText)
+                || expense.category.localizedCaseInsensitiveContains(searchText)
+                || expense.notes.localizedCaseInsensitiveContains(searchText)
+            let matchesCategory = selectedCategory == "All Categories"
+                || expense.category.caseInsensitiveCompare(selectedCategory) == .orderedSame
+            let matchesDate: Bool
+            switch dateFilter {
+            case .all:
+                matchesDate = true
+            case .thisMonth:
+                matchesDate = Calendar.current.isDate(
+                    expense.date,
+                    equalTo: .now,
+                    toGranularity: .month
+                )
+            case .last30Days:
+                let startDate = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .distantPast
+                matchesDate = expense.date >= startDate && expense.date <= .now
+            }
+            return matchesSearch && matchesCategory && matchesDate
+        }
+    }
+
+    private var isFiltering: Bool {
+        selectedCategory != "All Categories" || dateFilter != .all
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                if expenses.isEmpty {
+                if filteredExpenses.isEmpty {
                     ContentUnavailableView(
-                        "No Expenses Yet",
-                        systemImage: "tray",
-                        description: Text("Tap the plus button to add your first expense.")
+                        expenses.isEmpty ? "No Expenses Yet" : "No Matching Expenses",
+                        systemImage: expenses.isEmpty ? "tray" : "magnifyingglass",
+                        description: Text(expenses.isEmpty
+                            ? "Tap the plus button to add your first expense."
+                            : "Try changing your search or filters.")
                     )
                 } else {
-                    ForEach(expenses) { expense in
-                        TransactionRow(
-                            icon: "creditcard.fill",
-                            title: expense.title,
-                            subtitle: expense.category,
-                            amount: "-" + expense.amount.formatted(
-                                .currency(code: "USD")
-                            ),
-                            color: .orange
-                        )
+                    ForEach(filteredExpenses) { expense in
+                        Button {
+                            editingExpense = expense
+                        } label: {
+                            TransactionRow(
+                                icon: categoryIcon(for: expense.category),
+                                title: expense.title,
+                                subtitle: expense.category,
+                                amount: "-" + expense.amount.formatted(
+                                    .currency(code: expense.currencyCode)
+                                ),
+                                color: categoryColor(for: expense.category)
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
                     .onDelete(perform: deleteExpenses)
                 }
             }
             .navigationTitle("Transactions")
+            .searchable(text: $searchText, prompt: "Search transactions")
             .toolbar {
-                Button {
-                    showingAddExpense = true
-                } label: {
-                    Image(systemName: "plus")
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Category", selection: $selectedCategory) {
+                            Text("All Categories").tag("All Categories")
+                            ForEach(categories) { category in
+                                Text(category.name).tag(category.name)
+                            }
+                        }
+                        Picker("Date", selection: $dateFilter) {
+                            ForEach(DateFilter.allCases) { filter in
+                                Text(filter.rawValue).tag(filter)
+                            }
+                        }
+                        if isFiltering {
+                            Button("Clear Filters", role: .destructive) {
+                                selectedCategory = "All Categories"
+                                dateFilter = .all
+                            }
+                        }
+                    } label: {
+                        Image(systemName: isFiltering ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    }
+                    .accessibilityLabel("Filter transactions")
+
+                    Button {
+                        showingAddExpense = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Add expense")
                 }
-                .accessibilityLabel("Add expense")
             }
             .sheet(isPresented: $showingAddExpense) {
                 AddExpenseView()
+            }
+            .sheet(item: $editingExpense) {
+                AddExpenseView(expense: $0)
+            }
+            .alert("Could Not Delete Expense", isPresented: Binding(
+                get: { saveError != nil },
+                set: { if !$0 { saveError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(saveError ?? "Unknown error")
             }
         }
     }
 
     private func deleteExpenses(at offsets: IndexSet) {
         for index in offsets {
-            modelContext.delete(expenses[index])
+            modelContext.delete(filteredExpenses[index])
         }
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            saveError = error.localizedDescription
+        }
     }
 }
 
 private struct BudgetsView: View {
-    @Query(sort: \ExpenseCategory.name) private var categories: [ExpenseCategory]
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Budget.category) private var budgets: [Budget]
     @Query private var expenses: [Expense]
+    @State private var showingCreateBudget = false
+    @State private var editingBudget: Budget?
+    @State private var saveError: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    ForEach(categories) { category in
+                    if budgets.isEmpty {
+                        ContentUnavailableView(
+                            "No Budgets Yet",
+                            systemImage: "chart.pie",
+                            description: Text("Tap the plus button to create a monthly budget.")
+                        )
+                        .padding(.top, 80)
+                    }
+                    ForEach(budgets) { budget in
                         BudgetCard(
-                            title: category.name,
-                            spent: spentThisMonth(for: category.name),
-                            limit: budgetLimit(for: category.name),
-                            color: categoryColor(for: category.name)
+                            title: budget.category,
+                            spent: spentThisMonth(for: budget.category),
+                            limit: budget.limit,
+                            color: categoryColor(for: budget.category),
+                            onEdit: { editingBudget = budget },
+                            onDelete: { deleteBudget(budget) }
                         )
                     }
                 }
@@ -180,7 +287,18 @@ private struct BudgetsView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Budgets")
             .toolbar {
-                Button(action: {}) { Image(systemName: "plus") }
+                Button { showingCreateBudget = true } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("Create budget")
+            }
+            .sheet(isPresented: $showingCreateBudget) { BudgetEditorView() }
+            .sheet(item: $editingBudget) { BudgetEditorView(budget: $0) }
+            .alert("Could Not Delete Budget", isPresented: Binding(
+                get: { saveError != nil },
+                set: { if !$0 { saveError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(saveError ?? "Unknown error")
             }
         }
     }
@@ -194,14 +312,13 @@ private struct BudgetsView: View {
             .reduce(0) { $0 + $1.amount }
     }
 
-    private func budgetLimit(for category: String) -> Double {
-        switch category.lowercased() {
-        case "food": return 700
-        case "transport": return 350
-        case "entertainment": return 200
-        case "shopping": return 500
-        case "bills": return 800
-        default: return 500
+    private func deleteBudget(_ budget: Budget) {
+        modelContext.delete(budget)
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            saveError = error.localizedDescription
         }
     }
 }
@@ -423,6 +540,7 @@ struct CategoryManagementView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ExpenseCategory.name) private var categories: [ExpenseCategory]
     @State private var newCategoryName = ""
+    @State private var saveError: String?
 
     var body: some View {
         List {
@@ -442,6 +560,14 @@ struct CategoryManagementView: View {
             }
         }
         .navigationTitle("Categories")
+        .alert("Could Not Save Categories", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveError ?? "Unknown error")
+        }
     }
 
     private var trimmedName: String {
@@ -454,16 +580,27 @@ struct CategoryManagementView: View {
 
     private func addCategory() {
         guard !trimmedName.isEmpty, !categoryAlreadyExists else { return }
-        modelContext.insert(ExpenseCategory(name: trimmedName))
-        try? modelContext.save()
-        newCategoryName = ""
+        let category = ExpenseCategory(name: trimmedName)
+        modelContext.insert(category)
+        do {
+            try modelContext.save()
+            newCategoryName = ""
+        } catch {
+            modelContext.delete(category)
+            saveError = error.localizedDescription
+        }
     }
 
     private func deleteCategories(at offsets: IndexSet) {
         for index in offsets {
             modelContext.delete(categories[index])
         }
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            saveError = error.localizedDescription
+        }
     }
 }
 
@@ -515,12 +652,21 @@ private struct BudgetCard: View {
     let spent: Double
     let limit: Double
     let color: Color
+    let onEdit: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(title).font(.headline)
                 Spacer()
+                Menu {
+                    Button("Edit", systemImage: "pencil", action: onEdit)
+                    Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("Budget options for \(title)")
                 Text("\(spent.formatted(.currency(code: "USD"))) of \(limit.formatted(.currency(code: "USD")))")
                     .font(.caption).foregroundStyle(.secondary)
             }

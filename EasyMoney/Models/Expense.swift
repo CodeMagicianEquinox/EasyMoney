@@ -5,8 +5,6 @@
 //  Created by Tim Terrance on 8/18/26.
 //
 
-// To do for 119; Start with adding Expenses ---> then can REMOVE mock data in the app.
-
 import Foundation
 import SwiftData
 

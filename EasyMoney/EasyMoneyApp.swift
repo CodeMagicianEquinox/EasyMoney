@@ -12,6 +12,10 @@ import SwiftData
 struct EasyMoneyApp: App {
     @AppStorage("seenWelcomeView") private var seenWelcomeView: Bool = false
     @AppStorage("userId") private var userId: String = ""
+
+    init() {
+        _ = BudgetNotificationManager.shared
+    }
     
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -19,6 +23,7 @@ struct EasyMoneyApp: App {
             MoneyTransaction.self,
             Expense.self,
             ExpenseCategory.self,
+            Budget.self,
         ])
         
         do {
@@ -38,6 +43,18 @@ struct EasyMoneyApp: App {
                     context.insert(
                         ExpenseCategory(name: category.name, iconName: category.icon)
                     )
+                }
+                try context.save()
+            }
+
+            let existingBudgets = try context.fetch(FetchDescriptor<Budget>())
+            if existingBudgets.isEmpty {
+                let categories = try context.fetch(FetchDescriptor<ExpenseCategory>())
+                for category in categories {
+                    context.insert(Budget(
+                        category: category.name,
+                        limit: BudgetRules.defaultLimit(for: category.name)
+                    ))
                 }
                 try context.save()
             }

@@ -5,7 +5,9 @@ struct SettingsView: View {
     @AppStorage("userId") private var loggedInUserId = ""
     @AppStorage("isDarkMode1") private var isDarkMode = false
     @AppStorage("showColorInExpense") private var showColor = true
+    @AppStorage("budgetAlertsEnabled") private var budgetAlertsEnabled = false
     @Query private var users: [User]
+    @State private var notificationPermissionDenied = false
 
     private var currentUser: User? {
         guard let id = UUID(uuidString: loggedInUserId) else { return nil }
@@ -51,6 +53,10 @@ struct SettingsView: View {
                 Section("Preferences") {
                     Toggle("Dark Mode", systemImage: "moon.fill", isOn: $isDarkMode)
                     Toggle("Category Colors", systemImage: "paintpalette.fill", isOn: $showColor)
+                    Toggle("Budget Alerts", systemImage: "bell.badge.fill", isOn: Binding(
+                        get: { budgetAlertsEnabled },
+                        set: { updateBudgetAlerts(enabled: $0) }
+                    ))
                     NavigationLink {
                         CategoryManagementView()
                     } label: {
@@ -65,6 +71,11 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .alert("Notifications Are Disabled", isPresented: $notificationPermissionDenied) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Allow notifications for EasyMoney in the Settings app to receive budget alerts.")
+            }
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
     }
@@ -73,6 +84,21 @@ struct SettingsView: View {
         let name = "\(user.firstName) \(user.lastName)"
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? "EasyMoney User" : name
+    }
+
+    private func updateBudgetAlerts(enabled: Bool) {
+        guard enabled else {
+            budgetAlertsEnabled = false
+            return
+        }
+
+        Task {
+            let granted = await BudgetNotificationManager.shared.requestPermission()
+            await MainActor.run {
+                budgetAlertsEnabled = granted
+                notificationPermissionDenied = !granted
+            }
+        }
     }
 }
 
@@ -202,5 +228,5 @@ private struct EditProfileView: View {
 
 #Preview {
     SettingsView()
-        .modelContainer(for: [User.self, ExpenseCategory.self], inMemory: true)
+        .modelContainer(for: [User.self, ExpenseCategory.self, Budget.self], inMemory: true)
 }

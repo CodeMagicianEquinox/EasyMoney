@@ -176,10 +176,6 @@ struct LoginView: View {
         return
     }
 
-    print("hashPassword")
-    print(hashPassword)
-    print(user.password)
-
     // login
     userId = user.id.uuidString
     }
