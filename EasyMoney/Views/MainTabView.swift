@@ -23,17 +23,29 @@ struct MainTabView: View {
 private struct DashboardView: View {
     @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
 
-    private var recentExpenses: ArraySlice<Expense> {
+    private var recentTransactions: ArraySlice<Expense> {
         expenses.prefix(3)
     }
 
-    private var totalSpent: Double {
-        expenses.reduce(0) { $0 + $1.amount }
+    private var balance: Double {
+        expenses.reduce(0) { $0 + ($1.isIncome ? $1.amount : -$1.amount) }
     }
 
     private var spentThisMonth: Double {
         expenses
-            .filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) }
+            .filter {
+                !$0.isIncome
+                    && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month)
+            }
+            .reduce(0) { $0 + $1.amount }
+    }
+
+    private var incomeThisMonth: Double {
+        expenses
+            .filter {
+                $0.isIncome
+                    && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month)
+            }
             .reduce(0) { $0 + $1.amount }
     }
 
@@ -42,13 +54,13 @@ private struct DashboardView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Total expenses")
+                        Text("Current balance")
                             .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.8))
-                        Text(totalSpent.formatted(.currency(code: "USD")))
+                        Text(balance.formatted(.currency(code: "USD")))
                             .font(.system(size: 34, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
-                        Text("\(spentThisMonth.formatted(.currency(code: "USD"))) this month")
+                        Text("Income minus expenses across all transactions")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.white.opacity(0.85))
                     }
@@ -61,8 +73,8 @@ private struct DashboardView: View {
                         .font(.title3.bold())
 
                     HStack(spacing: 12) {
-                        SummaryCard(title: "Expenses", value: totalSpent.formatted(.currency(code: "USD")), icon: "arrow.up.right", color: .orange)
-                        SummaryCard(title: "This month", value: spentThisMonth.formatted(.currency(code: "USD")), icon: "calendar", color: .blue)
+                        SummaryCard(title: "Income", value: incomeThisMonth.formatted(.currency(code: "USD")), icon: "arrow.down.left", color: .green)
+                        SummaryCard(title: "Expenses", value: spentThisMonth.formatted(.currency(code: "USD")), icon: "arrow.up.right", color: .orange)
                     }
 
                     HStack {
@@ -75,21 +87,22 @@ private struct DashboardView: View {
                     }
 
                     VStack(spacing: 0) {
-                        if recentExpenses.isEmpty {
+                        if recentTransactions.isEmpty {
                             ContentUnavailableView(
-                                "No Recent Expenses",
+                                "No Recent Transactions",
                                 systemImage: "clock",
-                                description: Text("Expenses you save will appear here.")
+                                description: Text("Income and expenses you save will appear here.")
                             )
                             .padding()
                         } else {
-                            ForEach(recentExpenses) { expense in
+                            ForEach(recentTransactions) { expense in
                                 TransactionRow(
-                                    icon: categoryIcon(for: expense.category),
+                                    icon: transactionIcon(for: expense),
                                     title: expense.title,
                                     subtitle: expense.date.formatted(date: .abbreviated, time: .omitted),
-                                    amount: "-" + expense.amount.formatted(.currency(code: "USD")),
-                                    color: categoryColor(for: expense.category)
+                                    amount: signedAmount(for: expense),
+                                    color: transactionColor(for: expense),
+                                    amountColor: expense.isIncome ? .green : .primary
                                 )
                                 Divider().padding(.leading, 54)
                             }
@@ -160,10 +173,10 @@ private struct TransactionsView: View {
             List {
                 if filteredExpenses.isEmpty {
                     ContentUnavailableView(
-                        expenses.isEmpty ? "No Expenses Yet" : "No Matching Expenses",
+                        expenses.isEmpty ? "No Transactions Yet" : "No Matching Transactions",
                         systemImage: expenses.isEmpty ? "tray" : "magnifyingglass",
                         description: Text(expenses.isEmpty
-                            ? "Tap the plus button to add your first expense."
+                            ? "Tap the plus button to add your first transaction."
                             : "Try changing your search or filters.")
                     )
                 } else {
@@ -172,13 +185,12 @@ private struct TransactionsView: View {
                             editingExpense = expense
                         } label: {
                             TransactionRow(
-                                icon: categoryIcon(for: expense.category),
+                                icon: transactionIcon(for: expense),
                                 title: expense.title,
                                 subtitle: expense.category,
-                                amount: "-" + expense.amount.formatted(
-                                    .currency(code: expense.currencyCode)
-                                ),
-                                color: categoryColor(for: expense.category)
+                                amount: signedAmount(for: expense),
+                                color: transactionColor(for: expense),
+                                amountColor: expense.isIncome ? .green : .primary
                             )
                         }
                         .buttonStyle(.plain)
@@ -218,7 +230,7 @@ private struct TransactionsView: View {
                     } label: {
                         Image(systemName: "plus")
                     }
-                    .accessibilityLabel("Add expense")
+                    .accessibilityLabel("Add transaction")
                 }
             }
             .sheet(isPresented: $showingAddExpense) {
@@ -227,7 +239,7 @@ private struct TransactionsView: View {
             .sheet(item: $editingExpense) {
                 AddExpenseView(expense: $0)
             }
-            .alert("Could Not Delete Expense", isPresented: Binding(
+            .alert("Could Not Delete Transaction", isPresented: Binding(
                 get: { saveError != nil },
                 set: { if !$0 { saveError = nil } }
             )) {
@@ -307,6 +319,7 @@ private struct BudgetsView: View {
         expenses
             .filter {
                 $0.category.caseInsensitiveCompare(category) == .orderedSame
+                    && !$0.isIncome
                     && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month)
             }
             .reduce(0) { $0 + $1.amount }
@@ -629,6 +642,7 @@ private struct TransactionRow: View {
     let subtitle: String
     let amount: String
     let color: Color
+    var amountColor: Color = .primary
 
     var body: some View {
         HStack(spacing: 12) {
@@ -641,9 +655,12 @@ private struct TransactionRow: View {
                 Text(subtitle).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Text(amount).font(.subheadline.weight(.semibold))
+            Text(amount)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(amountColor)
         }
         .padding(.vertical, 10)
+        .padding(.horizontal, 12)
     }
 }
 
@@ -696,6 +713,19 @@ private func categoryIcon(for category: String) -> String {
     case "entertainment": return "gamecontroller.fill"
     default: return "tag.fill"
     }
+}
+
+private func transactionIcon(for transaction: Expense) -> String {
+    transaction.isIncome ? "arrow.down.left.circle.fill" : categoryIcon(for: transaction.category)
+}
+
+private func transactionColor(for transaction: Expense) -> Color {
+    transaction.isIncome ? .green : categoryColor(for: transaction.category)
+}
+
+private func signedAmount(for transaction: Expense) -> String {
+    let prefix = transaction.isIncome ? "+" : "-"
+    return prefix + transaction.amount.formatted(.currency(code: transaction.currencyCode))
 }
 
 private func categoryColor(for category: String) -> Color {

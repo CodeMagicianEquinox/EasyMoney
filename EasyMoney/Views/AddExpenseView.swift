@@ -2,6 +2,13 @@ import SwiftUI
 import SwiftData
 
 struct AddExpenseView: View {
+    private enum TransactionType: String, CaseIterable, Identifiable {
+        case expense = "Expense"
+        case income = "Income"
+
+        var id: String { rawValue }
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ExpenseCategory.name) private var categories: [ExpenseCategory]
@@ -15,6 +22,7 @@ struct AddExpenseView: View {
     @State private var date = Date()
     @State private var category = "Food"
     @State private var notes = ""
+    @State private var transactionType: TransactionType = .expense
     @State private var saveError: String?
 
     init(expense: Expense? = nil) {
@@ -24,6 +32,7 @@ struct AddExpenseView: View {
         _date = State(initialValue: expense?.date ?? .now)
         _category = State(initialValue: expense?.category ?? "Food")
         _notes = State(initialValue: expense?.notes ?? "")
+        _transactionType = State(initialValue: expense?.isIncome == true ? .income : .expense)
     }
 
     private var amount: Double? {
@@ -38,21 +47,29 @@ struct AddExpenseView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Expense") {
+                Section("Transaction") {
+                    Picker("Type", selection: $transactionType) {
+                        ForEach(TransactionType.allCases) { type in
+                            Text(type.rawValue).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
                     TextField("Title", text: $title)
                     TextField("Amount", text: $amountText)
                         .keyboardType(.decimalPad)
                     DatePicker("Date", selection: $date, displayedComponents: .date)
                 }
 
-                Section("Category") {
-                    Picker("Category", selection: $category) {
-                        ForEach(categories, id: \.self) { category in
-                            Label(category.name, systemImage: category.iconName)
-                                .tag(category.name)
+                if transactionType == .expense {
+                    Section("Category") {
+                        Picker("Category", selection: $category) {
+                            ForEach(categories, id: \.self) { category in
+                                Label(category.name, systemImage: category.iconName)
+                                    .tag(category.name)
+                            }
                         }
                     }
-
                 }
 
                 Section("Notes") {
@@ -61,12 +78,14 @@ struct AddExpenseView: View {
                 }
             }
             .onAppear {
-                if !categories.contains(where: { $0.name == category }),
-                   let firstCategory = categories.first {
-                    category = firstCategory.name
+                selectValidExpenseCategoryIfNeeded()
+            }
+            .onChange(of: transactionType) { _, newType in
+                if newType == .expense {
+                    selectValidExpenseCategoryIfNeeded()
                 }
             }
-            .alert("Could Not Save Expense", isPresented: Binding(
+            .alert("Could Not Save Transaction", isPresented: Binding(
                 get: { saveError != nil },
                 set: { if !$0 { saveError = nil } }
             )) {
@@ -74,7 +93,7 @@ struct AddExpenseView: View {
             } message: {
                 Text(saveError ?? "Unknown error")
             }
-            .navigationTitle(expense == nil ? "Add Expense" : "Edit Expense")
+            .navigationTitle(expense == nil ? "Add Transaction" : "Edit Transaction")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -105,21 +124,24 @@ struct AddExpenseView: View {
             category: category,
             currencyCode: "USD",
             exchangeRate: 1,
-            notes: cleanNotes
+            notes: cleanNotes,
+            isIncome: transactionType == .income
         )
         let originalValues = (
             expenseToSave.title,
             expenseToSave.amount,
             expenseToSave.date,
             expenseToSave.category,
-            expenseToSave.notes
+            expenseToSave.notes,
+            expenseToSave.isIncome
         )
 
         expenseToSave.title = cleanTitle
         expenseToSave.amount = amount
         expenseToSave.date = date
-        expenseToSave.category = category
+        expenseToSave.category = transactionType == .income ? "Income" : category
         expenseToSave.notes = cleanNotes
+        expenseToSave.isIncome = transactionType == .income
         if expense == nil { modelContext.insert(expenseToSave) }
 
         do {
@@ -135,13 +157,21 @@ struct AddExpenseView: View {
                 expenseToSave.date = originalValues.2
                 expenseToSave.category = originalValues.3
                 expenseToSave.notes = originalValues.4
+                expenseToSave.isIncome = originalValues.5
             }
             saveError = error.localizedDescription
         }
     }
 
+    private func selectValidExpenseCategoryIfNeeded() {
+        if !categories.contains(where: { $0.name == category }),
+           let firstCategory = categories.first {
+            category = firstCategory.name
+        }
+    }
+
     private func sendBudgetAlertIfNeeded(for expense: Expense) {
-        guard budgetAlertsEnabled else { return }
+        guard budgetAlertsEnabled, !expense.isIncome else { return }
 
         let descriptor = FetchDescriptor<Expense>()
         guard let expenses = try? modelContext.fetch(descriptor) else { return }
