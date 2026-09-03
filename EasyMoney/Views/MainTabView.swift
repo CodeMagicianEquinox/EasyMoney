@@ -21,7 +21,20 @@ struct MainTabView: View {
 }
 
 private struct DashboardView: View {
+    @AppStorage("userId") private var loggedInUserId = ""
     @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
+    @Query private var users: [User]
+
+    private let accentColor = Color(hex: "#16865A")
+
+    private var greetingName: String {
+        guard let id = UUID(uuidString: loggedInUserId),
+              let user = users.first(where: { $0.id == id }) else {
+            return "there"
+        }
+        let firstName = user.firstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return firstName.isEmpty ? "there" : firstName
+    }
 
     private var recentTransactions: ArraySlice<Expense> {
         expenses.prefix(3)
@@ -53,6 +66,15 @@ private struct DashboardView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 36))
+                            .foregroundStyle(accentColor)
+
+                        Text("Hello, \(greetingName)")
+                            .font(.largeTitle.bold())
+                    }
+
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Current balance")
                             .font(.subheadline)
@@ -66,11 +88,12 @@ private struct DashboardView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(22)
-                    .background(Backgrounds.gradient3)
+                    .background(Backgrounds.balanceGradient)
                     .clipShape(RoundedRectangle(cornerRadius: 20))
 
-                    Text("This month")
+                    Label("This month", systemImage: "calendar")
                         .font(.title3.bold())
+                        .foregroundStyle(accentColor)
 
                     HStack(spacing: 12) {
                         SummaryCard(title: "Income", value: incomeThisMonth.formatted(.currency(code: "USD")), icon: "arrow.down.left", color: .green)
@@ -78,8 +101,9 @@ private struct DashboardView: View {
                     }
 
                     HStack {
-                        Text("Recent activity")
+                        Label("Recent activity", systemImage: "clock.arrow.circlepath")
                             .font(.title3.bold())
+                            .foregroundStyle(accentColor)
                         Spacer()
                         Text(Date.now.formatted(.dateTime.month(.wide)))
                             .font(.caption)
@@ -114,7 +138,7 @@ private struct DashboardView: View {
                 .padding()
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Hello, Demo")
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }

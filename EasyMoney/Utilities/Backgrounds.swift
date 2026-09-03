@@ -41,5 +41,15 @@ struct Backgrounds {
         startPoint: .bottom,  // "to top" in CSS becomes .bottom to .top in SwiftUI
         endPoint: .top
     )
+
+    static var balanceGradient = LinearGradient(
+        gradient: Gradient(colors: [
+            Color(hex: "#0F6B4F"),
+            Color(hex: "#16865A"),
+            Color(hex: "#2E9B73"),
+        ]),
+        startPoint: .bottomLeading,
+        endPoint: .topTrailing
+    )
  
 }
